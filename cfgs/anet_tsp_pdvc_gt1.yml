@@ -1,0 +1,6 @@
+id: anet_tsp_pdvc_gt
+base_cfg_path: cfgs/anet_c3d_pdvc_gt.yml
+visual_feature_type: ['tsp']
+visual_feature_folder: ['/mnt/hdd8t/nia2022_1-3/activiynet/tsp/']
+invalid_video_json: []
+feature_dim: 512

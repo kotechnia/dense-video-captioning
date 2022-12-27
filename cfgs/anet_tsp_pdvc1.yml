@@ -1,0 +1,9 @@
+id: anet_tsp_pdvc
+base_cfg_path: cfgs/anet_c3d_pdvc.yml
+visual_feature_type: ['tsp']
+visual_feature_folder: ['/mnt/hdd8t/nia2022_1-3/activiynet/tsp/']
+invalid_video_json: []
+feature_dim: 512
+dict_file : 'data/anet/vocabulary_activitynet.json'
+train_caption_file: 'data/anet/captiondata/train_modified_250.json'
+vocab_size : 5747
