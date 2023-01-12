@@ -40,10 +40,12 @@ class Captioner(nn.Module):
         self.logit.bias.data.fill_(0)
         self.logit.weight.data.uniform_(-initrange, initrange)
 
-    def init_hidden(self, batch_size):
-        weight = next(self.parameters()).data
-        return (weight.new(self.num_layers, batch_size, self.rnn_size).zero_(),
-                weight.new(self.num_layers, batch_size, self.rnn_size).zero_())  # (h0, c0)
+    def init_hidden(self, batch_size, device):
+        #weight = next(self.parameters()).data
+        #return (weight.new(self.num_layers, batch_size, self.rnn_size).zero_(),
+        #        weight.new(self.num_layers, batch_size, self.rnn_size).zero_())  # (h0, c0)
+        return (torch.Tensor([]).new(self.num_layers, batch_size, self.rnn_size).zero_().to(device),
+                torch.Tensor([]).new(self.num_layers, batch_size, self.rnn_size).zero_().to(device))  # (h0, c0)
 
     def build_loss(self, input, target, mask):
         one_hot = torch.nn.functional.one_hot(target, self.opt.vocab_size+1)
@@ -71,7 +73,7 @@ class Captioner(nn.Module):
 
         query = hs
         batch_size = query.shape[1]
-        state = self.init_hidden(batch_size)
+        state = self.init_hidden(batch_size, device=hs.device)
         outputs = []
         seq = seq.long()
 
@@ -146,7 +148,7 @@ class Captioner(nn.Module):
             reference_points = reference_points[:, :, :n_levels]
             pass
 
-        state = self.init_hidden(batch_size)
+        state = self.init_hidden(batch_size, device=hs.device)
 
         seq = []
         seqLogprobs = []

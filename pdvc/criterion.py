@@ -117,7 +117,10 @@ class SetCriterion(nn.Module):
         self_iou_split = 0
         for i, c in enumerate(self_iou.split(sizes, -1)):
             cc = c.split(sizes, -2)[i]
-            self_iou_split += cc.sum() / (0.5 * (sizes[i]) * (sizes[i]-1))
+            if sizes[i] > 1:
+                self_iou_split += cc.sum() / (0.5 * (sizes[i]) * (sizes[i]-1))
+            else:
+                self_iou_split += cc.sum() / 0.5
         losses['loss_self_iou'] = self_iou_split
 
         return losses

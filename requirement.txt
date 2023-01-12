@@ -1,8 +1,9 @@
 
 torch==1.9.0+cu111
 torchvision==0.10.0+cu111
-ffmpeg
+protobuf==3.20.1
 
+ffmpeg
 h5py
 matplotlib
 numpy
@@ -20,5 +21,6 @@ tqdm
 google_trans_new
 sentencepiece
 transformers
+
 
 --find-links https://download.pytorch.org/whl/torch_stable.html

@@ -28,7 +28,7 @@ def parse_opts():
     parser.add_argument('--gt_file_for_eval', type=str, nargs='+', default=['data/anet/captiondata/val_1.json', 'data/anet/captiondata/val_2.json'])
     parser.add_argument('--gt_file_for_para_eval', type=str, nargs='+', default= ['data/anet/captiondata/para/anet_entities_val_1_para.json', 'data/anet/captiondata/para/anet_entities_val_2_para.json'])
     parser.add_argument('--dict_file', type=str, default='data/anet/vocabulary_activitynet.json', help='')
-    parser.add_argument('--token_type', type=str, default='json', choices=['json', 'model', 'transformers'])
+    parser.add_argument('--token_type', type=str, default='json', choices=['json', 'transformers'])
     parser.add_argument('--lang' , type=str, default='utf-8-sig')
     parser.add_argument('--bleu_token_type', default=['PTB', None])
     parser.add_argument('--criteria_for_best_ckpt', type=str, default='dvc', choices=['dvc', 'pc'], help='for dense video captioning, use soda_c + METEOR as the criteria'
@@ -189,6 +189,10 @@ def parse_opts():
 
     if args.cfg_path:
         import_cfg(args.cfg_path, vars(args))
+        print('----------------', args.save_all_checkpoint)
+
+    args.batch_size = len(args.gpu_id)
+    args.batch_size_for_eval = len(args.gpu_id)
 
     if args.random_seed:
         import random

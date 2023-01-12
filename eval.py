@@ -25,6 +25,8 @@ from torch.utils.data import DataLoader
 from os.path import basename
 import pandas as pd
 
+from train import PdvcDataParallel
+
 def create_fake_test_caption_file(metadata_csv_path):
     out = {}
     df = pd.read_csv(metadata_csv_path)
@@ -53,6 +55,8 @@ def main(opt):
         logger.info('load info from {}'.format(infos_path))
         old_opt = json.load(f)['best']['opt']
 
+    old_opt['batch_size_for_eval'] = len(opt.gpu_id)
+
     for k, v in old_opt.items():
         if k[:4] != 'eval':
             vars(opt).update({k: v})
@@ -78,7 +82,8 @@ def main(opt):
     model, criterion, postprocessors = build(opt)
     model.translator = val_dataset.translator
 
-
+    model.to(opt.eval_device)
+    model = PdvcDataParallel(model)
 
     while not os.path.exists(model_path):
         raise AssertionError('File {} does not exist'.format(model_path))
@@ -90,8 +95,6 @@ def main(opt):
     # loaded_pth = transfer(model, loaded_pth, model_path+'.transfer.pth')
     model.load_state_dict(loaded_pth['model'], strict=True)
     model.eval()
-
-    model.to(opt.eval_device)
 
     if opt.eval_mode == 'test':
         out_json_path = os.path.join(folder_path, 'dvc_results.json')
@@ -106,16 +109,11 @@ def main(opt):
         caption_scores, eval_loss = evaluate(model, criterion, postprocessors, loader, out_json_path,
                          logger, alpha=opt.ec_alpha, dvc_eval_version=opt.eval_tool_version, device=opt.eval_device, debug=False, skip_lang_eval=False, lang=opt.lang, bleu_token_type = opt.bleu_token_type)
         avg_eval_score = {key: np.array(value).mean() for key, value in caption_scores.items() if key !='tiou'}
-        avg_eval_score2 = {key: np.array(value).mean() * 4917 / len(loader.dataset) for key, value in caption_scores.items() if key != 'tiou'}
 
         logger.info(
-            '\nValidation result based on all 4917 val videos:\n {}\n avg_score:\n{}'.format(
+            '\nValidation result based on {} val videos:\n {}\n avg_score:\n{}'.format(len(loader.dataset),
                                                                                        caption_scores.items(),
                                                                                        avg_eval_score))
-
-        logger.info(
-                '\nValidation result based on {} available val videos:\n avg_score:\n{}'.format(len(loader.dataset),
-                                                                                           avg_eval_score2))
 
     logger.info('saving reults json to {}'.format(out_json_path))
 

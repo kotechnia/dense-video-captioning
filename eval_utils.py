@@ -38,7 +38,7 @@ def convert_tapjson_to_dvcjson(tap_json, dvc_json):
             p_info['proposal_score'] = p_info.pop('score')
             p_info['sentence_score'] = p_info.pop('sentence_score', 0)
         data['results']["v_" + video_name] = data['results'].pop(video_name)
-    json.dump(data, open(dvc_json, 'w'))
+    json.dump(data, open(dvc_json, 'w'), indent=4, ensure_ascii=False)
 
 
 def convert_dvcjson_to_tapjson(dvc_json, tap_json):
@@ -58,7 +58,7 @@ def convert_dvcjson_to_tapjson(dvc_json, tap_json):
             score = data[video_name][i].get('proposal_score', 1.0)
             video_info.append({'segment': timestamp, 'score': score, 'sentence': sentences[i], 'sentence_score': data[video_name][i].get('sentence_score', 0)})
         out['results'][video_name[2:]] = video_info
-    json.dump(out, open(tap_json, 'w'))
+    json.dump(out, open(tap_json, 'w'), indent=4, ensure_ascii=False)
 
 
 def convert_gtjson_to_tapjson(gt_json, tap_json):
@@ -77,7 +77,7 @@ def convert_gtjson_to_tapjson(gt_json, tap_json):
             video_info.append({'segment': timestamp, 'score': 1., 'sentence': sentences[i]})
         out['results'][video_name[2:]] = video_info
     with open(tap_json, 'w') as f:
-        json.dump(out, f)
+        json.dump(out, f, indent=4, ensure_ascii=False)
 
 
 def get_topn_from_dvcjson(dvc_json, out_json, top_n=3, ranking_key='proposal_score', score_thres=-1e8):
@@ -103,7 +103,7 @@ def get_topn_from_dvcjson(dvc_json, out_json, top_n=3, ranking_key='proposal_sco
     print('bad videos number: {}'.format(bad_vid))
     print('good videos number: {}'.format(len(out['results'])))
     with open(out_json, 'w') as f:
-        json.dump(out, f)
+        json.dump(out, f, indent=4, ensure_ascii=False)
 
 
 def eval_metrics(dvc_filename, gt_filenames, para_gt_filenames, alpha=0.3, ranking_key='proposal_score', rerank=False, dvc_eval_version='2018', lang=None, bleu_token_type=['PTB', None]):
@@ -123,8 +123,8 @@ def eval_metrics(dvc_filename, gt_filenames, para_gt_filenames, alpha=0.3, ranki
         dvc_filename = reranking(dvc_filename, alpha=alpha, temperature=2.0, lang=lang)
     dvc_score = eval_dvc(json_path=dvc_filename, reference=gt_filenames, version=dvc_eval_version, lang=lang, bleu_token_type=bleu_token_type)
     dvc_score = {k: sum(v) / len(v) for k, v in dvc_score.items()}
-    dvc_score.update(eval_soda(dvc_filename, ref_list=gt_filenames, lang = lang))
-    dvc_score.update(eval_para(dvc_filename, referneces=para_gt_filenames, lang = lang))
+    #dvc_score.update(eval_soda(dvc_filename, ref_list=gt_filenames, lang = lang))
+    #dvc_score.update(eval_para(dvc_filename, referneces=para_gt_filenames, lang = lang))
     score.update(dvc_score)
     return score
 
@@ -133,7 +133,7 @@ def save_dvc_json(out_json, path, lang):
     with open(path, 'w', encoding=lang if lang else None) as f:
         out_json['valid_video_num'] = len(out_json['results'])
         out_json['avg_proposal_num'] = np.array([len(v) for v in out_json['results'].values()]).mean().item()
-        json.dump(out_json, f, ensure_ascii=False if lang else None)
+        json.dump(out_json, f, indent=4, ensure_ascii=False )
 
 def reranking(p_src, alpha, temperature, lang):
     print('alpha: {}, temp: {}'.format(alpha, temperature))
@@ -170,44 +170,80 @@ def evaluate(model, criterion, postprocessors, loader, dvc_json_path, logger=Non
             # valid_keys = ["video_tensor", "video_length", "video_mask", "video_key"]
             # dt = {key: value for key, value in dt.items() if key in valid_keys}
             dt = {key: _.to(device) if isinstance(_, torch.Tensor) else _ for key, _ in dt.items()}
-            dt = collections.defaultdict(lambda: None, dt)
+            #dt = collections.defaultdict(lambda: None, dt)
 
             dt['video_target'] = [
                     {key: _.to(device) if isinstance(_, torch.Tensor) else _ for key, _ in vid_info.items()} for vid_info in
                     dt['video_target']]
 
-            output, loss = model(dt, criterion, opt.transformer_input_type, eval_mode=True)
-            orig_target_sizes = dt['video_length'][:, 1]
+            output_all, loss = model(dt, criterion, opt.transformer_input_type, eval_mode=True)
 
-            weight_dict = criterion.weight_dict
-            final_loss = sum(loss[k] * weight_dict[k] for k in loss.keys() if k in weight_dict)
+            # sum all loss in gpus
+            for loss_k,loss_v in loss.items():
+                loss[loss_k] = torch.sum(loss_v)
 
-            for loss_k, loss_v in loss.items():
-                loss_sum[loss_k] = loss_sum.get(loss_k, 0) + loss_v.item()
-            loss_sum['total_loss'] = loss_sum.get('total_loss', 0) + final_loss.item()
+            for i in range(output_all['pred_logits'].shape[0]):
+                output = {}
+                dim3 = output_all['mod_shape'][i][2]
+                dim1x = output_all['mod_shape'][i][3]
+                dim1y = output_all['mod_shape'][i][4]
+                for key in output_all.keys():
+                    if isinstance(output_all[key], dict): # 'caption_probs'
+                        output[key] = {}
+                        for k in output_all[key].keys():
+                            output[key][k] = output_all[key][k][i]
+                    elif isinstance(output_all[key], list): # 'aux_outputs'
+                        output[key] = [{}]
+                        for k in output_all[key][0].keys():
+                            if isinstance(output_all[key][0][k], dict): # 'caption_probs'
+                                output[key][0][k] = {}
+                                for k2 in output_all[key][0][k].keys():
+                                     output[key][0][k][k2] = output_all[key][0][k][k2][i]
+                            else:
+                                output[key][0][k] = output_all[key][0][k][i]
+                    elif isinstance(output_all[key], tuple): # 'matched_indices'
+                        x, y = output_all[key]
+                        x1 = x[0][0][i][0:dim1x]
+                        x2 = x[0][1][i][0:dim1x]
+                        y1 = y[0][0][i][0:dim1y]
+                        y2 = y[0][1][i][0:dim1y]
+                        output[key] = ([(x1, x2)], [(y1, y2)])
+                    else:
+                        output[key] = output_all[key][i]
 
-            results = postprocessors['bbox'](output, orig_target_sizes, loader)
+                output['caption_probs']['cap_prob_eval'] = output['caption_probs']['cap_prob_eval'][:,:,:dim3]
+                output['seq'] = output['seq'][:,:,:dim3]
 
-            batch_json = {}
-            for idx, video_name in enumerate(dt['video_key']):
-                segment = results[idx]['boxes'].cpu().numpy()
-                raw_boxes = results[idx]['raw_boxes'].cpu().numpy()
-                # pdb.set_trace()
-                batch_json[video_name] = [
-                    {
-                        "timestamp": segment[pid].tolist(),
-                        "raw_box": raw_boxes[pid].tolist(),
-                        "proposal_score": results[idx]['scores'][pid].item(),
-                        "sentence": results[idx]['captions'][pid],
-                        "sentence_score": results[idx]['caption_scores'][pid],
-                        'query_id': results[idx]['query_id'][pid].item(),
-                        'vid_duration': results[idx]['vid_duration'].item(),
-                        'pred_event_count': results[idx]['pred_seq_len'].item(),
-                    }
-                    for pid in range(len(segment)) if results[idx]['scores'][pid].item() > score_threshold]
-            out_json['results'].update(batch_json)
-            if debug and len(out_json['results']) > 5:
-                break
+                orig_target_sizes = dt['video_length'][i:i+1][:, 1]
+
+                weight_dict = criterion.weight_dict
+                final_loss = sum(loss[k] * weight_dict[k] for k in loss.keys() if k in weight_dict)
+
+                for loss_k, loss_v in loss.items():
+                    loss_sum[loss_k] = loss_sum.get(loss_k, 0) + loss_v.item()
+                loss_sum['total_loss'] = loss_sum.get('total_loss', 0) + final_loss.item()
+
+                results = postprocessors['bbox'](output, orig_target_sizes, loader)
+                batch_json = {}
+                for idx, video_name in enumerate(dt['video_key'][i:i+1]):
+                    segment = results[idx]['boxes'].cpu().numpy()
+                    raw_boxes = results[idx]['raw_boxes'].cpu().numpy()
+                    # pdb.set_trace()
+                    batch_json[video_name] = [
+                        {
+                            "timestamp": segment[pid].tolist(),
+                            "raw_box": raw_boxes[pid].tolist(),
+                            "proposal_score": results[idx]['scores'][pid].item(),
+                            "sentence": results[idx]['captions'][pid],
+                            "sentence_score": results[idx]['caption_scores'][pid],
+                            'query_id': results[idx]['query_id'][pid].item(),
+                            'vid_duration': results[idx]['vid_duration'].item(),
+                            'pred_event_count': results[idx]['pred_seq_len'].item(),
+                        }
+                        for pid in range(len(segment)) if results[idx]['scores'][pid].item() > score_threshold]
+                out_json['results'].update(batch_json)
+                if debug and len(out_json['results']) > 5:
+                    break
 
     save_dvc_json(out_json, dvc_json_path, lang)
 

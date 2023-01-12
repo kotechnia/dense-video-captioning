@@ -164,6 +164,76 @@ class PDVC(nn.Module):
         else:
             out, loss = self.parallel_prediction_matched(dt, criterion, hs, init_reference, inter_references, others,
                                                          disable_iterative_refine)
+        # output reshape for multi-gpu
+        dim1_max = 10
+        dim2_max = 100
+        dim3_max = 100
+        cap_prob_key = 'cap_prob_train' if not eval_mode else 'cap_prob_eval'
+
+        dim1, dim2, dim3 = tuple(out['caption_probs'][cap_prob_key].shape)
+
+        dim1_diff = dim1_max - dim1
+        dim2_diff = dim2_max - dim2
+        dim3_diff = dim3_max - dim3
+
+        x = out['caption_probs'][cap_prob_key]
+        if not eval_mode:
+            y = torch.full([dim1, dim2_diff, dim3], 0., device=hs.device)
+            x = torch.cat([x,y], axis=1)
+            y = torch.full([dim1_diff, dim2_max, dim3], 0., device=hs.device)
+            x = torch.cat([x,y], axis=0)
+        else:
+            y = torch.full([dim1, dim2, dim3_diff], 0., device=hs.device)
+            x = torch.cat([x,y], axis=2)
+        x = torch.unsqueeze(x, 0)
+
+        out['caption_probs'][cap_prob_key] = x
+        x, y = out['matched_indices']
+        x1 = x[0][0].to(hs.device)
+        x2 = x[0][1].to(hs.device)
+        dim1x_matched = x[0][0].shape[0]
+        dim1y_matched = y[0][0].shape[0]
+        #print('x1,x2 shape =', x1.shape, x2.shape)
+        z = torch.full([dim1_max-dim1x_matched], 0, device=hs.device)
+        x1 = torch.unsqueeze(torch.cat([x1,z], axis=0), 0)
+        x2 = torch.unsqueeze(torch.cat([x2,z], axis=0), 0)
+        z = torch.full([dim1_max-dim1y_matched], 0, device=hs.device)
+        y1 = y[0][0].to(hs.device)
+        y2 = y[0][1].to(hs.device)
+        #print('y1,y2 shape =', y1.shape, y2.shape)
+        y1 = torch.unsqueeze(torch.cat([y1,z], axis=0), 0)
+        y2 = torch.unsqueeze(torch.cat([y2,z], axis=0), 0)
+        #print('matched_indeces shape =', x1.shape, x2.shape, y1.shape, y2.shape)
+        out['matched_indices'] = ([(x1, x2)], [(y1, y2)])
+
+        x = out['seq']
+        if not eval_mode:
+            dim2_seq_max = 100
+            dim2_seq = x.shape[1]
+            #print('seq =', x)
+            y = torch.full([dim1, dim2_seq_max - dim2_seq], 0, device=hs.device)
+            x = torch.cat([x, y], axis=1)
+            y = torch.full([dim1_diff, dim2_seq_max], 0, device=hs.device)
+            x = torch.cat([x, y], axis=0)
+        else:
+            y = torch.full([dim1, dim2, dim3_diff], 0, device=hs.device)
+            x = torch.cat([x, y], axis=2)
+        x = torch.unsqueeze(x, 0)
+        out['seq'] = x
+
+        out['pred_logits'] = torch.unsqueeze(out['pred_logits'], 0)
+        out['pred_count'] = torch.unsqueeze(out['pred_count'], 0)
+        out['pred_boxes'] = torch.unsqueeze(out['pred_boxes'], 0)
+        out['aux_outputs'][0]['pred_logits'] = torch.unsqueeze(out['aux_outputs'][0]['pred_logits'], 0)
+        out['aux_outputs'][0]['pred_count'] = torch.unsqueeze(out['aux_outputs'][0]['pred_count'], 0)
+        out['aux_outputs'][0]['pred_boxes'] = torch.unsqueeze(out['aux_outputs'][0]['pred_boxes'], 0)
+        out['aux_outputs'][0]['caption_probs']['cap_prob_train'] = \
+          torch.unsqueeze(out['aux_outputs'][0]['caption_probs']['cap_prob_train'], 0)
+        if eval_mode:
+            out['aux_outputs'][0]['caption_probs']['cap_prob_eval'] = \
+              torch.unsqueeze(out['aux_outputs'][0]['caption_probs']['cap_prob_eval'], 0)
+            out['mod_shape']=torch.tensor([[dim1, dim2, dim3, dim1x_matched, dim1y_matched]], device=hs.device)
+
         return out, loss
 
     def predict_event_num(self, counter, hs_lid):

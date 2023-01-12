@@ -3,6 +3,8 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+from datetime import datetime
+
 import json
 import time
 import torch
@@ -28,9 +30,117 @@ from data.video_dataset import PropSeqDataset, collate_fn
 from pdvc.pdvc import build
 from collections import OrderedDict
 
+import torch.nn as nn
+from torch.nn.parallel._functions import Scatter
+from itertools import chain
+
+def is_namedtuple(obj):
+    # Check if type was created from collections.namedtuple or a typing.NamedTuple.
+    warnings.warn("is_namedtuple is deprecated, please use the python checks instead")
+    return _is_namedtuple(obj)
+
+def _is_namedtuple(obj):
+    # Check if type was created from collections.namedtuple or a typing.NamedTuple.
+    return (
+        isinstance(obj, tuple) and hasattr(obj, "_asdict") and hasattr(obj, "_fields")
+    )
+
+def scatter(inputs, target_gpus, dim=0):
+    def scatter_map_list(obj):
+        if isinstance(obj, torch.Tensor):
+            return Scatter.apply(target_gpus, None, dim, obj)
+        if _is_namedtuple(obj):
+            return [type(obj)(*args) for args in zip(*map(scatter_map_list, obj))]
+        if isinstance(obj, tuple) and len(obj) > 0:
+            return list(zip(*map(scatter_map_list, obj)))
+        #if isinstance(obj, list) and len(obj) > 0 and not isinstance(obj[0], dict):
+        if isinstance(obj, list) and len(obj) > 0:
+            n_data = len(obj)
+            n_gpu = len(target_gpus)
+            n_scatter = [n_data//n_gpu]*n_gpu
+            for i in range(n_data%n_gpu):
+                n_scatter[i] += 1
+            idx_start = 0
+            slice_list = []
+            for i in range(n_gpu):
+                slice_list.append(slice(idx_start, idx_start+n_scatter[i]))
+                idx_start += n_scatter[i]
+            #print(slice_list)
+            return [obj[slice_i] for slice_i in slice_list]
+        if isinstance(obj, dict) and len(obj) > 0:
+            return [type(obj)(i) for i in zip(*map(scatter_map_list, obj.items()))]
+        return [obj for targets in target_gpus]
+
+    def scatter_map(obj):
+        if isinstance(obj, torch.Tensor):
+            return Scatter.apply(target_gpus, None, dim, obj)
+        if _is_namedtuple(obj):
+            return [type(obj)(*args) for args in zip(*map(scatter_map, obj))]
+        if isinstance(obj, tuple) and len(obj) > 0:
+            return list(zip(*map(scatter_map, obj)))
+        if isinstance(obj, list) and len(obj) > 0:
+            return [list(i) for i in zip(*map(scatter_map, obj))]
+        if isinstance(obj, dict) and len(obj) > 0 and 'video_target' in obj.keys():
+            n_gpu = len(target_gpus)
+            n_batch = len(obj['video_target'])
+            obj['cap_tensor'] = obj['cap_tensor'].repeat(n_gpu, 1)
+            obj['cap_mask'] = obj['cap_mask'].repeat(n_gpu, 1)
+            obj['gt_gather_idx'] = obj['gt_gather_idx'].repeat(n_gpu, 1)
+            obj['gt_featstamps'] = obj['gt_featstamps']*n_gpu
+            obj['cap_length'] = obj['cap_length'].repeat(n_gpu, 1)
+            n_batch = len(obj['cap_raw'])
+            n_cap = [len(i) for i in obj['cap_raw']]
+            res = [type(obj)(i) for i in zip(*map(scatter_map_list, obj.items()))]
+            idx = 0
+            for i, n in enumerate(n_cap):
+                res[i]['cap_tensor'] = res[i]['cap_tensor'][idx:idx+n]
+                res[i]['cap_mask'] = res[i]['cap_mask'][idx:idx+n]
+                res[i]['gt_gather_idx'] = res[i]['gt_gather_idx'][0][idx:idx+n]
+                res[i]['gt_featstamps'] = res[i]['gt_featstamps'][idx:idx+n]
+                res[i]['cap_length'] = res[i]['cap_length'][0][idx:idx+n]
+                idx += n
+            for i, r in enumerate(res):
+                targets = r['video_target']
+                for target in targets:
+                    for key in target.keys():
+                        if isinstance(target[key], torch.Tensor):
+                            target[key] = target[key].to(target_gpus[i])
+            return res
+        if isinstance(obj, dict) and len(obj) > 0:
+            return [type(obj)(i) for i in zip(*map(scatter_map, obj.items()))]
+        return [obj for targets in target_gpus]
+
+    try:
+        res = scatter_map(inputs)
+    finally:
+        scatter_map = None
+        scatter_map_list = None
+    return res
+
+def scatter_kwargs(inputs, kwargs, target_gpus, dim=0):
+    r"""Scatter with support for kwargs dictionary"""
+    inputs = scatter(inputs, target_gpus, dim) if inputs else []
+    kwargs = scatter(kwargs, target_gpus, dim) if kwargs else []
+    if len(inputs) < len(kwargs):
+        kwargs = kwargs[:len(inputs)]
+        #inputs.extend(() for _ in range(len(kwargs) - len(inputs)))
+    elif len(kwargs) < len(inputs):
+        kwargs.extend({} for _ in range(len(inputs) - len(kwargs)))
+    inputs = tuple(inputs)
+    kwargs = tuple(kwargs)
+    return inputs, kwargs
+
+class PdvcDataParallel(nn.DataParallel):
+    def __init__(self, module, device_ids=None, output_device=None, dim=0):
+        super().__init__(module, device_ids, output_device, dim)
+
+    def scatter(self, inputs, kwargs, device_ids):
+        return scatter_kwargs(inputs, kwargs, device_ids, dim=self.dim)
+
 def train(opt):
     set_seed(opt.seed)
     save_folder = build_floder(opt)
+    save_folder = abspath(save_folder)
     logger = create_logger(save_folder, 'train.log')
     tf_writer = SummaryWriter(os.path.join(save_folder, 'tf_summary'))
 
@@ -87,6 +197,9 @@ def train(opt):
     model.translator = train_dataset.translator
     model.train()
 
+    model.to(opt.device)
+    model = PdvcDataParallel(model)
+
     # Recover the parameters
     if opt.start_from and (not opt.pretrain):
         if opt.start_from_mode == 'best':
@@ -115,8 +228,6 @@ def train(opt):
             model.load_state_dict(model_pth['model'], strict=True)
         else:
             raise ValueError("wrong value of opt.pretrain")
-
-    model.to(opt.device)
 
     if opt.optimizer_type == 'adam':
         optimizer = optim.Adam(model.parameters(), lr=opt.lr, weight_decay=opt.weight_decay)
@@ -175,10 +286,14 @@ def train(opt):
                 {key: _.to(opt.device) if isinstance(_, torch.Tensor) else _ for key, _ in vid_info.items()} for vid_info in
                 dt['video_target']]
 
-            dt = collections.defaultdict(lambda: None, dt)
+            #dt = collections.defaultdict(lambda: None, dt)
 
             output, loss = model(dt, criterion, opt.transformer_input_type)
 
+            # sum all loss in gpus
+            for loss_k,loss_v in loss.items():
+                loss[loss_k] = torch.sum(loss_v)
+            
             final_loss = sum(loss[k] * weight_dict[k] for k in loss.keys() if k in weight_dict)
             final_loss.backward()
             torch.nn.utils.clip_grad_norm_(model.parameters(), opt.grad_clip)
@@ -290,7 +405,7 @@ def train(opt):
                                      # 'query_matched_fre_hist': query_matched_fre_hist,
                                      }
             with open(os.path.join(save_folder, 'info.json'), 'w') as f:
-                json.dump(saved_info, f)
+                json.dump(saved_info, f, indent=4)
             logger.info('Save info to info.json')
 
             model.train()
