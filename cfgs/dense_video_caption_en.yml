@@ -1,0 +1,67 @@
+
+id: dense_video_captioning_english 
+
+vocab_size: 30522
+dict_file:  bert-base-uncased
+token_type: transformers 
+
+visual_feature_folder:
+- ../data/features 
+
+train_caption_file: data/dense_video_caption/train_en_set.json 
+
+val_caption_file: data/dense_video_captio/valid_en_set.json
+gt_file_for_eval:
+- data/dense_video_caption/valid_en_set.json
+gt_file_for_para_eval:
+- data/dense_video_captioni/valid_en_set_para.json
+
+eval_caption_file: data/dense_video_caption/test_en_set.json
+eval_caption_file_para: data/dense_video_caption/test_en_set_para.json
+
+
+bleu_token_type : ['transformers', 'bert-base-uncased']
+
+epoch: 5 
+lr: 5.0e-05
+
+
+bbox_loss_coef: 0
+caption_loss_coef: 2
+giou_loss_coef: 4
+count_loss_coef: 0.5
+
+
+cap_nheads: 1
+caption_decoder_type: standard
+
+dec_layers: 2
+ec_alpha: 1.0
+enc_layers: 2
+
+visual_feature_type:
+  - tsp
+feature_dim: 512
+fix_xcw: 1
+
+gt_proposal_sample_num: 30
+
+lloss_cross_entropy: 0
+lloss_focal_loss: 0
+
+num_queries: 10
+
+save_all_checkpoint: 0
+set_cost_bbox: 0
+set_cost_caption: 0
+set_cost_class: 2
+set_cost_giou: 4
+soft_attention: 1
+
+train_proposal_type: gt
+
+transformer_ff_dim: 512
+
+weight_decay: 0.0001
+with_box_refine: 1
+
