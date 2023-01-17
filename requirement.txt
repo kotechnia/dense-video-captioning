@@ -19,7 +19,6 @@ av
 joblib
 tqdm
 google_trans_new
-sentencepiece
 transformers
 
 

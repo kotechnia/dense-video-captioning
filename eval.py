@@ -60,6 +60,14 @@ def main(opt):
     for k, v in old_opt.items():
         if k[:4] != 'eval':
             vars(opt).update({k: v})
+        elif 'caption_file' in k and not vars(opt)[k] :
+            vars(opt).update({k: v})
+    
+    assert (opt.eval_caption_file and opt.eval_caption_file_para), "Required options: eval_caption_file, eval_caption_file_para"
+
+    opt.transformer_input_type = opt.eval_transformer_input_type
+    opt.gt_file_for_eval = [opt.eval_caption_file]
+    opt.gt_file_for_para_eval = [opt.eval_caption_file_para]
 
     opt.transformer_input_type = opt.eval_transformer_input_type
 
@@ -126,7 +134,8 @@ if __name__ == '__main__':
     parser.add_argument('--eval_folder', type=str, required=True)
     parser.add_argument('--eval_model_path', type=str, default='')
     parser.add_argument('--eval_tool_version', type=str, default='2018', choices=['2018', '2021'])
-    parser.add_argument('--eval_caption_file', type=str, default='data/anet/captiondata/val_1.json')
+    parser.add_argument('--eval_caption_file', type=str)
+    parser.add_argument('--eval_caption_file_para', type=str)
     parser.add_argument('--eval_proposal_type', type=str, default='gt')
     parser.add_argument('--eval_transformer_input_type', type=str, default='queries', choices=['gt_proposals', 'queries'])
     parser.add_argument('--gpu_id', type=str, nargs='+', default=['0'])

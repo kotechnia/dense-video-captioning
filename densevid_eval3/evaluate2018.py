@@ -50,6 +50,7 @@ class ANETcaptions(object):
         self.prediction = self.import_prediction(prediction_filename)
         self.ground_truths_keys = [vid for gt in self.ground_truths for vid in gt ]
         self.token = token
+        self.video_scores = {}
 
 
         print('available video number', len(set(self.ground_truths_keys) & set(self.prediction.keys())))
@@ -259,13 +260,14 @@ class ANETcaptions(object):
                 scores = np.mean(list(all_scores.values()), axis=0)
                 for m in range(len(method)):
                     output[method[m]] = scores[m]
+                    self.video_scores[method[m]] = {tiou:{key : value[m] for key, value in all_scores.items()}}
                     if self.verbose:
                         print("Calculated tIoU: %1.1f, %s: %0.3f" % (tiou, method[m], output[method[m]]))
             else:
                 output[method] = np.mean(list(all_scores.values()))
+                self.video_scores[method] = {tiou : all_scores}
                 if self.verbose:
                    print("Calculated tIoU: %1.1f, %s: %0.3f" % (tiou, method, output[method]))
-
         return output
 
 def main(args):
@@ -277,7 +279,7 @@ def main(args):
                              verbose=args.verbose, no_lang_eval=args.no_lang_eval, lang=args.lang)
     evaluator.evaluate()
     # evaluator.scores['tiou'] = args.tious
-    return evaluator.scores
+    return evaluator.scores, evaluator.video_scores, evaluator.ground_truths 
 
 
 if __name__ == '__main__':

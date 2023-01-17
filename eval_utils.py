@@ -121,12 +121,13 @@ def eval_metrics(dvc_filename, gt_filenames, para_gt_filenames, alpha=0.3, ranki
 
     if rerank:
         dvc_filename = reranking(dvc_filename, alpha=alpha, temperature=2.0, lang=lang)
-    dvc_score = eval_dvc(json_path=dvc_filename, reference=gt_filenames, version=dvc_eval_version, lang=lang, bleu_token_type=bleu_token_type)
+    dvc_score, video_scores, gt = eval_dvc(json_path=dvc_filename, reference=gt_filenames, version=dvc_eval_version, lang=lang, bleu_token_type=bleu_token_type)
+    json.dump(video_scores, open('dvc_test.json','w'), indent=4, ensure_ascii=False)
     dvc_score = {k: sum(v) / len(v) for k, v in dvc_score.items()}
     #dvc_score.update(eval_soda(dvc_filename, ref_list=gt_filenames, lang = lang))
     #dvc_score.update(eval_para(dvc_filename, referneces=para_gt_filenames, lang = lang))
     score.update(dvc_score)
-    return score
+    return score, video_scores, gt
 
 
 def save_dvc_json(out_json, path, lang):
@@ -226,6 +227,7 @@ def evaluate(model, criterion, postprocessors, loader, dvc_json_path, logger=Non
                 results = postprocessors['bbox'](output, orig_target_sizes, loader)
                 batch_json = {}
                 for idx, video_name in enumerate(dt['video_key'][i:i+1]):
+                    
                     segment = results[idx]['boxes'].cpu().numpy()
                     raw_boxes = results[idx]['raw_boxes'].cpu().numpy()
                     # pdb.set_trace()
@@ -253,7 +255,7 @@ def evaluate(model, criterion, postprocessors, loader, dvc_json_path, logger=Non
     for k in loss_sum.keys():
         loss_sum[k] = np.round(loss_sum[k] / (len(loader) + 1e-5), 3).item()
     logger.info('loss: {}'.format(loss_sum))
-    scores = eval_metrics(dvc_json_path,
+    scores, each_scores, gt = eval_metrics(dvc_json_path,
                           gt_filenames=opt.gt_file_for_eval,
                           para_gt_filenames=opt.gt_file_for_para_eval,
                           alpha=alpha,
@@ -264,5 +266,7 @@ def evaluate(model, criterion, postprocessors, loader, dvc_json_path, logger=Non
                           )
 
     out_json.update(scores)
+    out_json['gt'] = gt[0]
+    out_json['each_scores'] = each_scores
     save_dvc_json(out_json, dvc_json_path, lang)
     return scores, loss_sum
