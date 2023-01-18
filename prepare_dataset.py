@@ -95,21 +95,8 @@ def split_datasets(data, split_file):
         np.random.shuffle(video_names)
         train_list = video_names[:int(len(video_names)*0.8)]
         valid_list = video_names[int(len(video_names)*0.8):int(len(video_names)*0.9)]
-        test_list = video_names[:int(len(video_names)*0.9)]
+        test_list = video_names[int(len(video_names)*0.9):]
         split_list = {'train':train_list, 'valid':valid_list, 'test':test_list}
-
-    #else:
-    #    split_list = {'train':[], 'valid':[], 'test':[]}
-    #    domain_videos = {domain :data[data['domain_id']==domain]['video_name'].tolist() for domain in data['domain_id'].unique()}
-    #    for domain in domain_videos.keys():
-    #        dat = domain_videos[domain]
-    #        np.random.shuffle(dat)
-    #        cnt = len(dat)
-    #        split_list['train'] += dat[:int(0.8*cnt)]
-    #        split_list['valid'] += dat[int(0.8*cnt):int(0.9*cnt)]
-    #        split_list['test'] += dat[int(0.9*cnt):]
-    #    json.dump(split_list, open('data/dense_video_caption/split_data_list.json','w'), indent=4, ensure_ascii=False)
-
 
     for mode in ['train','valid', 'test']:
         print('Parsing', mode, 'dataset...')
