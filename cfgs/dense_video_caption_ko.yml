@@ -8,16 +8,16 @@ token_type: transformers
 visual_feature_folder:
 - ../data/features 
 
-train_caption_file: data/dense_video_caption/train_ko_set.json 
+train_caption_file: data/dense_video_caption/dense_video_caption_train_korean.json 
 
-val_caption_file: data/dense_video_caption/valid_ko_set.json
+val_caption_file: data/dense_video_caption/dense_video_caption_valid_korean.json
 gt_file_for_eval:
-- data/dense_video_caption/valid_ko_set.json
+- data/dense_video_caption/dense_video_caption_valid_korean.json
 gt_file_for_para_eval:
-- data/dense_video_caption/valid_ko_set_para.json
+- data/dense_video_caption/dense_video_caption_valid_korean_para.json
 
-eval_caption_file: data/dense_video_caption/test_ko_set.json
-eval_caption_file_para: data/dense_video_caption/test_ko_set_para.json
+eval_caption_file: data/dense_video_caption/dense_video_caption_test_korean.json
+eval_caption_file_para: data/dense_video_caption/dense_video_caption_test_korean_para.json
 
 bleu_token_type : ['transformers', 'monologg/koelectra-base-v3-discriminator']
 
