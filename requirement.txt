@@ -3,23 +3,22 @@ torch==1.9.0+cu111
 torchvision==0.10.0+cu111
 protobuf==3.20.1
 
-ffmpeg
-h5py
-matplotlib
-numpy
-pandas
-Pillow
-PyYAML
-six
-tqdm
-tensorboardX
-colorlog
-scipy
-av
-joblib
-tqdm
-google_trans_new
-transformers
+ffmpeg==1.4
+h5py==3.7.0
+matplotlib==3.6.3
+numpy==1.24.1
+pandas==1.5.2
+Pillow==8.4.0
+PyYAML==6.0
+six==1.16.0
+tqdm==4.64.1
+tensorboardX==2.5.1
+colorlog==6.7.0
+scipy==1.10.0
+av==10.0.0
+joblib==1.2.0
+google_trans_new==1.1.9
+transformers==4.25.1
 
 
 --find-links https://download.pytorch.org/whl/torch_stable.html
